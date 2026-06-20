@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import cast, Any
 
 
 @dataclass
@@ -30,25 +29,28 @@ def is_eligible_amount(order: Order, user: User) -> bool:
     return order.amount > 1000 or (order.type == "bulk" and not user.is_trial)
 
 
+VALID_REGION_CURRENCY = {("EU", "EUR"): True, ("US", "USD"): True, ("JP", "YEN"): True}
+
+
 def has_valid_currency(order: Order, user: User) -> bool:
-    return user.region != "EU" or order.currency == "EUR"
+    return VALID_REGION_CURRENCY.get((user.region, order.currency), False)
 
 
 def approve_order(order: Order, user: User) -> str:
     # Guard clause: reject early
     if user.is_admin:
         return "approved"
-    if not user.is_premium:
-        return "rejected"
-    if cast(Any, order.amount) is None:
-        return "rejected"
-    if not is_eligible_amount(order, user):
-        return "rejected"
-    if order.has_discount:
-        return "rejected"
-    if not has_valid_currency(order, user):
-        return "rejected"
-    if any(item.price < 0 for item in order.items):
+
+    rejection_rules = [
+        lambda: not user.is_premium,
+        lambda: order.amount is None,
+        lambda: not is_eligible_amount(order, user),
+        lambda: order.has_discount,
+        lambda: not has_valid_currency(order, user),
+        lambda: any(item.price < 0 for item in order.items),
+    ]
+
+    if any(rule() for rule in rejection_rules):
         return "rejected"
 
     return "approved"
